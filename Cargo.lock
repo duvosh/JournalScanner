@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "js-cli"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "js-core",
  "mimalloc",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "js-core"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "bzip2",
  "cab",
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "js-gui"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "eframe",
  "egui",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "js-native"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "memchr",
  "windows",

@@ -4,7 +4,7 @@ members = ["crates/js-core", "crates/js-native", "crates/js-gui", "crates/js-cli
 
 [workspace.package]
 edition = "2021"
-version = "2.0.4"
+version = "2.0.5"
 
 [workspace.dependencies]
 js-core = { path = "crates/js-core" }
