@@ -4142,6 +4142,138 @@ pub fn weak_to_notes(res: &mut ScanResult) {
     res.findings = keep;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Kesinlik kontrolü: "KESİN HİLE" kararı yalnızca dosyanın hile olduğu KANITLANDIĞINDA verilir.
+//
+// Kanıt (tek başına yeter): bilinen hile istemcisinin kodu / eklenti API'si / kaynak kodu, hile
+// istemcisi modül yapısı, iz silme aracı, oyuna kod enjekte eden yükleyici, kodunu gizleyip
+// bellekte çalıştıran yükleyici, gizli Java agent, kod adlarında hile modül adları.
+//
+// Belirti (tek başına yetmez): davranış imzaları (Reach, KillAura ...) meşru modlarda da
+// görülebilir (ölçek / savaş / görüntü modları). Davranış ancak BAĞIMSIZ ikinci bir kanıtla
+// (kod karartma, gizli sınıf, şifreli kod, Java agent, kod içi hile adı) birlikte KESİN sayılır;
+// aksi halde ŞÜPHELİ gösterilir ve yetkilinin elle kontrol etmesi istenir.
+// ---------------------------------------------------------------------------------------------
+const PROOF_KEYS: &[&str] = &[
+    "known_client",
+    "client_addon",
+    "cheat_source",
+    "client_layout",
+    "handle_closer",
+    "handle_closer_mod",
+    "native_injector",
+    "injector",
+    "memory_loader",
+    "hidden_loader",
+    "packed_loader",
+    "native_module_client",
+];
+const CONCEAL_KEYS: &[&str] = &["obfuscated", "hidden_classes", "encrypted_java", "fake_fabric"];
+
+/// weak_to_notes'tan ÖNCE çağrılır: gizleme belirtileri bulgudan nota çevrilmeden önce toplanır.
+pub fn concealment_labels(res: &ScanResult) -> StrList {
+    let mut out: StrList = Vec::new();
+    for f in &res.findings {
+        if in_list(&f.key, CONCEAL_KEYS) && f.category != "BILGI" && !out.contains(&f.label) {
+            out.push(f.label.clone());
+        }
+    }
+    out
+}
+
+/// KESİN_HİLE kategorili bir davranış imzasının ailesi (aynı hilenin iki imzası tek aile sayılır).
+fn behavior_family(key: &str) -> Option<&'static str> {
+    let sig = SIGNATURES.iter().find(|s| s.key == key && s.category == "KESIN_HILE")?;
+    Some(match sig.key {
+        "reach_player" => "reach",
+        "velocity_player" => "velocity",
+        "nofall_packet" => "nofall",
+        k => k,
+    })
+}
+
+/// cheat_terms bulgusunda hile adının SINIF/METOT/ALAN ADINDA geçtiği farklı terim sayısı.
+fn ident_term_count(f: &Finding) -> usize {
+    let mut terms: BTreeSet<String> = BTreeSet::new();
+    for u in &f.units {
+        for g in &u.groups {
+            for r in g {
+                if r.detail.contains("(sınıf/metot/alan adı)") {
+                    if let Some(t) = r.detail.split('\'').nth(1) {
+                        terms.insert(t.to_string());
+                    }
+                }
+            }
+        }
+    }
+    terms.len()
+}
+
+pub fn certainty_gate(res: &mut ScanResult, conceal: &[String]) {
+    let kesin: Vec<usize> = (0..res.findings.len())
+        .filter(|&i| res.findings[i].category == "KESIN_HILE")
+        .collect();
+    if kesin.is_empty() {
+        return;
+    }
+    let mut behaviors: BTreeSet<&'static str> = BTreeSet::new();
+    let mut beh_labels: StrList = Vec::new();
+    for &i in &kesin {
+        if let Some(fam) = behavior_family(&res.findings[i].key) {
+            if behaviors.insert(fam) {
+                beh_labels.push(res.findings[i].label.clone());
+            }
+        }
+    }
+    let mut proof = false;
+    for &i in &kesin {
+        let f = &res.findings[i];
+        if in_list(&f.key, PROOF_KEYS) || (f.key == "java_agent" && f.label.contains("gizli")) {
+            proof = true;
+        } else if f.key == "cheat_terms" {
+            let n = ident_term_count(f);
+            if n >= 2 || (n >= 1 && !behaviors.is_empty()) {
+                proof = true;
+            }
+        }
+    }
+    if proof {
+        return; // dosyanın hile olduğu kanıtlı: karar KESİN kalır
+    }
+    let mut support: StrList = conceal.to_vec();
+    for &i in &kesin {
+        let f = &res.findings[i];
+        if (f.key == "java_agent" || f.key == "cheat_terms") && !support.contains(&f.label) {
+            support.push(f.label.clone());
+        }
+    }
+    if !behaviors.is_empty() && !support.is_empty() {
+        let msg = format!(
+            "  >> Kesinlik kontrolü: hile davranışı ({}) ile birlikte bağımsız bir kanıt daha bulundu ({}); \
+             iki ayrı kanıt bir arada olduğu için KESİN sayıldı.",
+            join(&beh_labels, ", "),
+            join(&support, ", ")
+        );
+        for &i in &kesin {
+            res.findings[i].explain.push_str(&msg);
+        }
+        return;
+    }
+    for &i in &kesin {
+        let f = &mut res.findings[i];
+        f.category = "SUPHELI".to_string();
+        f.explain.push_str(
+            "  >> Kesinlik kontrolü: bu bulgu tek başına hile olduğunu KANITLAMAZ; meşru modlar da benzer kod \
+             içerebilir. Aynı dosyada bilinen hile kodu, hile modül adları ya da kod gizleme gibi ikinci bir \
+             kanıt olmadığı için KESİN HİLE yerine ŞÜPHELİ gösterildi. Yetkili elle kontrol etmeli.",
+        );
+    }
+    res.notes.push(format!(
+        "Kesinlik kontrolü: {} bulgu KESİN HİLE'den ŞÜPHELİ'ye indirildi (tek başına kanıt değil, ikinci bir kanıt yok).",
+        kesin.len()
+    ));
+}
+
 fn pe_has(data: &[u8], word: &str) -> bool {
     if bcontains(data, word.as_bytes()) {
         return true;
@@ -5298,7 +5430,9 @@ pub fn scan_jar_bytes(
         }
     }
 
+    let conceal = concealment_labels(&res);
     weak_to_notes(&mut res);
+    certainty_gate(&mut res, &conceal);
     if verified_plugin {
         let dropped = res.findings.len();
         res.findings.clear();
@@ -5624,5 +5758,103 @@ mod tests {
         assert_eq!(shannon_entropy(&[7u8; 100]), 0.0);
         let all: Vec<u8> = (0..=255u8).collect();
         assert!((shannon_entropy(&all) - 8.0).abs() < 1e-9);
+    }
+
+    fn gf(key: &str, label: &str, cat: &str, details: &[&str]) -> Finding {
+        let mut f = Finding::default();
+        f.key = key.to_string();
+        f.label = label.to_string();
+        f.category = cat.to_string();
+        let mut u = Unit::default();
+        u.groups.push(details.iter().map(|d| rw("hint", "a/B", d)).collect());
+        f.units.push(u);
+        f
+    }
+
+    fn gate(fs: Vec<Finding>, conceal: &[&str]) -> ScanResult {
+        let mut r = ScanResult::default();
+        r.findings = fs;
+        let c: StrList = conceal.iter().map(|s| s.to_string()).collect();
+        certainty_gate(&mut r, &c);
+        r
+    }
+
+    #[test]
+    fn gate_single_behavior_is_not_certain() {
+        let r = gate(vec![gf("reach", "Reach", "KESIN_HILE", &[])], &[]);
+        assert_eq!(r.findings[0].category, "SUPHELI");
+        let r = gate(
+            vec![
+                gf("reach", "Reach", "KESIN_HILE", &[]),
+                gf("velocity", "Velocity", "KESIN_HILE", &[]),
+            ],
+            &[],
+        );
+        assert!(r.findings.iter().all(|f| f.category == "SUPHELI"));
+        let r = gate(vec![gf("java_agent", "Java agent", "KESIN_HILE", &[])], &[]);
+        assert_eq!(r.findings[0].category, "SUPHELI");
+    }
+
+    #[test]
+    fn gate_behavior_with_second_evidence_stays_certain() {
+        let r = gate(
+            vec![gf("killaura", "KillAura", "KESIN_HILE", &[])],
+            &["Karartılmış kod"],
+        );
+        assert_eq!(r.findings[0].category, "KESIN_HILE");
+        let r = gate(
+            vec![
+                gf("reach", "Reach", "KESIN_HILE", &[]),
+                gf(
+                    "cheat_terms",
+                    "Hile terimleri",
+                    "KESIN_HILE",
+                    &["'killaura' (kod içindeki metin)"],
+                ),
+            ],
+            &[],
+        );
+        assert!(r.findings.iter().all(|f| f.category == "KESIN_HILE"));
+    }
+
+    #[test]
+    fn gate_proof_stays_certain() {
+        let r = gate(vec![gf("known_client", "Wurst", "KESIN_HILE", &[])], &[]);
+        assert_eq!(r.findings[0].category, "KESIN_HILE");
+        let r = gate(
+            vec![gf(
+                "java_agent",
+                "Çalışan oyuna sonradan yüklenen gizli Java agent",
+                "KESIN_HILE",
+                &[],
+            )],
+            &[],
+        );
+        assert_eq!(r.findings[0].category, "KESIN_HILE");
+        let two = [
+            "'killaura' (sınıf/metot/alan adı)",
+            "'triggerbot' (sınıf/metot/alan adı)",
+        ];
+        let r = gate(vec![gf("cheat_terms", "Hile terimleri", "KESIN_HILE", &two)], &[]);
+        assert_eq!(r.findings[0].category, "KESIN_HILE");
+    }
+
+    #[test]
+    fn gate_weak_terms_alone_not_certain() {
+        let one = ["'killaura' (sınıf/metot/alan adı)", "'killaura' (kod içindeki metin)"];
+        let r = gate(vec![gf("cheat_terms", "Hile terimleri", "KESIN_HILE", &one)], &[]);
+        assert_eq!(r.findings[0].category, "SUPHELI");
+        let r = gate(
+            vec![gf(
+                "cheat_terms",
+                "Hile terimleri",
+                "KESIN_HILE",
+                &["'aimbot' (kod içindeki metin)"],
+            )],
+            &["Karartılmış kod"],
+        );
+        assert_eq!(r.findings[0].category, "SUPHELI");
+        let r = gate(vec![gf("autoclicker", "AutoClicker", "YASAKLI_ISLEV", &[])], &[]);
+        assert_eq!(r.findings[0].category, "YASAKLI_ISLEV");
     }
 }

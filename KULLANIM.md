@@ -83,13 +83,17 @@ Sol menüden bir kategori seçin (örneğin **Mod Taraması**) ve sayfanın üst
 
 | Karar | Renk | Anlamı |
 |---|---|---|
-| **Kesin hile** | Kırmızı | Dosyanın içinde açıkça hile kodu var. |
+| **Kesin hile** | Kırmızı | Dosyanın hile olduğu kanıtlandı: bilinen bir hile programının kodu, hile modül adları, oyuna kod sokan yükleyici ya da en az iki bağımsız kanıt bir arada (örneğin hile davranışı + kod gizleme). |
 | **Yasaklı işlev** | Turuncu | Tam bir hile istemcisi değil ama sunucuda yasak bir özellik içeriyor (örneğin otomatik tıklama). |
 | **Şüpheli** | Sarı | Kesin değil. Elle bakmak gerekir. |
 | **Temiz** | Yeşil | Sorun bulunmadı. |
 | **Bilgi** | Gri | Hile kararı değil, sadece bilgi (örneğin takılı bir USB cihazı). |
 
 **Önemli:** "Şüpheli" bir sonuç, tek başına birinin hile kullandığı anlamına gelmez. Alt paneldeki açıklamayı okuyup karar verin.
+
+**Kesinlik kuralı:** Program, bir dosya hakkında emin olmadan "Kesin hile" demez. Menzil, geri tepme, otomatik vuruş gibi hile davranışları meşru modlarda da görülebilir (ölçek, savaş, görüntü modları). Bu yüzden böyle bir davranış tek başına bulunursa sonuç **Şüpheli** olur; "Kesin hile" için aynı dosyada ikinci, bağımsız bir kanıt gerekir.
+
+**Açıklamaları okumak:** Her dosyanın en üstünde **Özet** satırı kararı tek cümlede anlatır. Her bulgunun altında önce **Kısaca** (herkesin anlayacağı açıklama), sonra **Ne yapıyor** (teknik ayrıntı) ve kodun neresinde bulunduğu yazar.
 
 ---
 

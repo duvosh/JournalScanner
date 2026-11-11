@@ -73,6 +73,10 @@ pub fn mod_lines(r: &ScanResult, indent: &str) -> StrList {
     let mut l: StrList = Vec::new();
     let meta = &r.meta;
     l.push(format!("{ind}[{}] {}", goster_buyuk(&r.verdict), r.name));
+    let ozet = crate::plain::verdict_summary(r);
+    if !ozet.is_empty() {
+        l.push(format!("{ind}  Özet     : {}", ozet));
+    }
     l.push(format!("{ind}  Yol      : {}", r.file));
     for n in &r.notes {
         if starts(n, "Konum:") {
@@ -100,6 +104,7 @@ pub fn mod_lines(r: &ScanResult, indent: &str) -> StrList {
     }
     for f in &r.findings {
         l.push(format!("{ind}  >> {}  [{}]", f.label, cat_tr(&f.category)));
+        l.push(format!("{ind}     Kısaca     : {}", crate::plain::finding_summary(f)));
         l.push(format!("{ind}     Ne yapıyor : {}", f.explain));
         for u in &f.units {
             let mut head = format!("{ind}     Kod yeri   : {}", u.unit);

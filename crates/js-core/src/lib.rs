@@ -15,6 +15,7 @@ pub mod json;
 pub mod learn;
 pub mod locations;
 pub mod logs;
+pub mod plain;
 pub mod prefetch;
 pub mod procs;
 pub mod report;
